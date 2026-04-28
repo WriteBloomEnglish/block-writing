@@ -265,6 +265,14 @@ body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:#F5
 .dt-badge.ok{background:rgba(74,222,128,.15);color:#4ADE80}
 .dt-badge.ng{background:rgba(239,68,68,.1);color:#F87171}
 
+/* ── 누적 오답 노트 카드 (NEW) ── */
+.wrong-note-card{background:#fff;border-radius:12px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;border:1.5px solid #E9D5FF}
+.wrong-note-info{flex:1;min-width:0}
+.wrong-note-title{font-size:13px;font-weight:800;color:#7C3AED;margin-bottom:3px}
+.wrong-note-desc{font-size:11px;color:#888;line-height:1.5}
+.wrong-note-btn{flex-shrink:0;background:#A855F7;color:#fff;border:none;border-radius:8px;padding:10px 14px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+.wrong-note-btn:disabled{background:#E5E5E5;color:#999;cursor:default}
+
 /* ── 중간 점검 오버레이 ── */
 .checkpoint-modal .modal{border:3px solid #FFD93D;max-width:460px}
 .cp-unit-badge{background:#FFD93D;color:#3E2800;font-size:11px;font-weight:700;padding:4px 12px;border-radius:20px;display:inline-block;margin-bottom:12px}
@@ -308,11 +316,38 @@ body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;background:#F5
       ① 퀴즈 → ② 복습 → ③ 받아쓰기 완료!
     </div>
   </div>
-  <div class="login-form">
-    <input class="login-input" id="inp-name" type="text" placeholder="이름을 입력해요 (예: 김민준)" maxlength="20">
-    <input class="login-input" id="inp-code" type="text" placeholder="학생 코드 (선생님께 받은 코드)" maxlength="30">
-    <button class="btn btn-blue btn-lg" id="login-btn" onclick="doLogin()">시작하기</button>
+  <!-- Step 1: 학생 코드 입력 -->
+  <div class="login-form" id="login-step1">
+    <input class="login-input" id="inp-code" type="text" placeholder="학생 코드 (선생님께 받은 코드)" maxlength="30" autocomplete="off">
+    <button class="btn btn-blue btn-lg" id="step1-btn" onclick="submitCode()">다음</button>
   </div>
+
+  <!-- Step 2A: PIN 처음 설정 -->
+  <div class="login-form" id="login-step2a" style="display:none">
+    <div style="text-align:center;margin-bottom:6px">
+      <div style="font-size:18px;font-weight:800;color:#111" id="welcome-name-new"></div>
+      <div style="font-size:12px;color:#888;margin-top:6px;line-height:1.6">앞으로 사용할 PIN 6자리를 정해주세요.<br>꼭 기억해야 해요!</div>
+    </div>
+    <input class="login-input" id="inp-pin-new" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="PIN 6자리 (숫자)" maxlength="6" autocomplete="off">
+    <input class="login-input" id="inp-pin-confirm" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="PIN 다시 입력" maxlength="6" autocomplete="off">
+    <button class="btn btn-blue btn-lg" id="step2a-btn" onclick="setupPin()">PIN 설정하고 시작하기</button>
+    <button class="btn btn-gray btn-sm" onclick="goBackToStep1()" style="margin-top:2px">뒤로 가기</button>
+  </div>
+
+  <!-- Step 2B: PIN 입력 (재접속) -->
+  <div class="login-form" id="login-step2b" style="display:none">
+    <div style="text-align:center;margin-bottom:6px">
+      <div style="font-size:20px;font-weight:800;color:#111" id="welcome-name"></div>
+      <div style="font-size:12px;color:#888;margin-top:6px">PIN 6자리를 입력하세요</div>
+    </div>
+    <input class="login-input" id="inp-pin" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="PIN 6자리" maxlength="6" autocomplete="off">
+    <button class="btn btn-blue btn-lg" id="step2b-btn" onclick="submitPin()">로그인</button>
+    <div style="display:flex;gap:6px;margin-top:2px">
+      <button class="btn btn-gray btn-sm" style="flex:1" onclick="goBackToStep1()">뒤로 가기</button>
+      <button class="btn btn-gray btn-sm" style="flex:1" onclick="forgotPin()">PIN을 잊었어요?</button>
+    </div>
+  </div>
+
   <div class="login-note" style="margin-top:10px">학생 코드는 선생님께 받는 거예요.<br>코드가 없으면 접속이 되지 않아요.</div>
   <div style="margin-top:24px;padding-top:16px;border-top:1px solid #EEE;text-align:center;width:100%;max-width:360px">
     <div style="font-size:10px;color:#CCC;line-height:1.9">
@@ -512,6 +547,26 @@ window.addEventListener('load',function(){
   try{if(window.supabase)db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);}catch(e){}
 });
 
+/* ══════════════════════════════════════════
+   누적 오답 노트 - 패턴별 멘트 (선생님이 직접 수정 가능)
+   ══════════════════════════════════════════ */
+var MENTS_BY_PATTERN={
+  magicS_missing:'🟣 마법 S를 잊었어요! He, She, It 뒤에는 동사에 s를 꼭 붙여줘요.',
+  magicS_extra:'🟣 마법 S는 He, She, It 뒤에서만 써요. I, You, We, They 뒤에는 s 없이!',
+  word_missing:'✏️ 단어를 빠뜨렸어요. 카드를 모두 사용했는지 다시 확인해봐요.',
+  word_extra:'✏️ 필요 없는 단어가 들어갔어요. 꼭 필요한 카드만 골라봐요.',
+  word_order:'🔄 단어 순서가 달라요. 누가 → 한다 → 무엇을 순서를 기억해요!',
+  spelling:'📖 철자를 확인해봐요. 천천히 한 글자씩 다시 써보면 좋아요.',
+  capital:'🔤 대소문자를 확인해봐요. 문장 첫 글자는 대문자로!',
+  general:'💪 다음에는 더 잘할 수 있어요. 한 번 더 천천히 도전해봐요!'
+};
+var ENCOURAGE_BY_COUNT={
+  zero:'🎉 정말 대단해요! 모든 문장을 정확하게 썼어요.',
+  few:'🌟 잘하고 있어요! 조금만 더 신경쓰면 완벽해요.',
+  some:'💪 차근차근 보면서 다시 한 번 도전해봐요.',
+  many:'📚 이 문장들을 천천히 다시 보면서 패턴을 익혀봐요!'
+};
+
 /* ══ 데이터 ══ */
 var NOUNS=[
   {w:'I',kS:'나는',whoOnly:1,sing:0},
@@ -576,10 +631,9 @@ var UNITS=[
   {id:3,name:'S + V + O 확장',desc:'다양한 조합',total:300,checkpoint:500},
   {id:4,name:'전체 복합',desc:'모든 카드 조합',total:500,checkpoint:1000}
 ];
-var WARN_BEFORE=20; /* 점검 20문장 전 공지 */
+var WARN_BEFORE=20;
 
 /* UNIT별 퀴즈 풀 */
-/* UNIT 1: S+V 자동사만 (마법S 포함) */
 var QUIZ_UNIT1=[
   {kor:'나는 뛰어.',who:'I',does:'run',magic:false,what:null},
   {kor:'우리는 수영해.',who:'We',does:'swim',magic:false,what:null},
@@ -603,7 +657,6 @@ var QUIZ_UNIT1=[
   {kor:'그는 춤춰.',who:'He',does:'dance',magic:true,what:null}
 ];
 
-/* UNIT 2: S+V+O 기본 */
 var QUIZ_UNIT2=[
   {kor:'나는 피자를 먹어.',who:'I',does:'eat',magic:false,what:'pizza'},
   {kor:'그는 음악을 좋아해.',who:'He',does:'like',magic:true,what:'music'},
@@ -627,7 +680,6 @@ var QUIZ_UNIT2=[
   {kor:'오빠는 강아지를 걷게 해.',who:'my brother',does:'walk',magic:true,what:'dogs'}
 ];
 
-/* UNIT 3+: 전체 조합 */
 var QUIZ_POOL=QUIZ_UNIT1.concat(QUIZ_UNIT2);
 
 /* ══ 상태 ══ */
@@ -656,14 +708,23 @@ function speakQ(){
   var q=todayQuiz[qIdx];if(q)speak(buildEng(q.who,q.does,q.magic,q.what));
 }
 
-/* ══ 로그인 ══ */
-function doLogin(){
-  var name=document.getElementById('inp-name').value.trim();
-  var code=document.getElementById('inp-code').value.trim().toUpperCase();
-  if(!name){alert('이름을 입력해주세요!');return;}
-  if(!code){showNoCodeMsg();return;}
-  /* 항상 Supabase에서 검증 (로컬 캐시 있어도) */
-  verifyCode(name, code);
+/* ══ 로그인 (PIN 시스템) ══ */
+var pendingStudent=null;
+
+function showLoginStep(stepId){
+  ['login-step1','login-step2a','login-step2b'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el)el.style.display=(id===stepId)?'flex':'none';
+  });
+}
+
+function goBackToStep1(){
+  pendingStudent=null;
+  ['inp-code','inp-pin-new','inp-pin-confirm','inp-pin'].forEach(function(id){
+    var el=document.getElementById(id);if(el)el.value='';
+  });
+  showLoginStep('login-step1');
+  setTimeout(function(){var el=document.getElementById('inp-code');if(el)el.focus();},100);
 }
 
 function showNoCodeMsg(){
@@ -676,53 +737,160 @@ function showNoCodeMsg(){
   },3000);
 }
 
-async function verifyCode(name, code){
-  var btn=document.getElementById('login-btn');
+async function submitCode(){
+  var code=document.getElementById('inp-code').value.trim().toUpperCase();
+  if(!code){showNoCodeMsg();return;}
+
+  var btn=document.getElementById('step1-btn');
   btn.textContent='확인 중...';btn.disabled=true;
 
-  /* Supabase 연결 안 된 경우 */
-  if(!db){
-    btn.textContent='시작하기';btn.disabled=false;
-    /* 로컬 캐시 확인 */
-    var stored=null;
-    try{stored=JSON.parse(localStorage.getItem('bw_'+code)||'null');}catch(e){}
-    if(stored){
-      student=stored;enterApp();
-    } else {
-      alert('서버 연결 중이에요. 잠시 후 다시 눌러봐요!');
+  var data=null;
+
+  if(db){
+    try{
+      var r=await db.from('students').select('*').eq('code',code).single();
+      if(r.error||!r.data){
+        btn.textContent='다음';btn.disabled=false;
+        alert('등록되지 않은 코드예요.\n선생님께 코드를 확인해주세요!\n\n입력한 코드: '+code);
+        return;
+      }
+      if(r.data.hasOwnProperty('approved')&&r.data.approved===false){
+        btn.textContent='다음';btn.disabled=false;
+        showBlockedMsg();
+        return;
+      }
+      data=r.data;
+    }catch(e){
+      console.error('submitCode supabase error:',e);
     }
+  }
+
+  /* Supabase 실패 시 캐시 fallback */
+  if(!data){
+    try{
+      var stored=JSON.parse(localStorage.getItem('bw_'+code)||'null');
+      if(stored)data=stored;
+    }catch(e){}
+  }
+
+  btn.textContent='다음';btn.disabled=false;
+
+  if(!data){
+    alert('서버 연결 중이에요. 잠시 후 다시 눌러봐요!');
+    return;
+  }
+
+  pendingStudent={
+    name:data.name||'학생',
+    code:code,
+    pin:data.pin||null,
+    total:data.total_sentences||data.total||0,
+    startDate:data.start_date||data.startDate||new Date().toISOString().slice(0,10)
+  };
+
+  if(!pendingStudent.pin){
+    /* PIN 첫 설정 */
+    document.getElementById('welcome-name-new').textContent='환영합니다, '+pendingStudent.name+'님! 🎉';
+    showLoginStep('login-step2a');
+    setTimeout(function(){var el=document.getElementById('inp-pin-new');if(el)el.focus();},100);
+  } else {
+    /* PIN 입력 */
+    document.getElementById('welcome-name').textContent='안녕하세요, '+pendingStudent.name+'님! 👋';
+    showLoginStep('login-step2b');
+    setTimeout(function(){var el=document.getElementById('inp-pin');if(el)el.focus();},100);
+  }
+}
+
+async function setupPin(){
+  if(!pendingStudent)return;
+  var pin1=document.getElementById('inp-pin-new').value.trim();
+  var pin2=document.getElementById('inp-pin-confirm').value.trim();
+
+  if(!/^\d{6}$/.test(pin1)){alert('PIN은 숫자 6자리여야 해요.');return;}
+  if(pin1!==pin2){
+    alert('두 번 입력한 PIN이 달라요. 다시 확인해봐요!');
+    document.getElementById('inp-pin-confirm').value='';
+    document.getElementById('inp-pin-confirm').focus();
+    return;
+  }
+
+  var btn=document.getElementById('step2a-btn');
+  btn.textContent='저장 중...';btn.disabled=true;
+
+  if(!db){
+    btn.textContent='PIN 설정하고 시작하기';btn.disabled=false;
+    alert('서버 연결이 필요해요. 인터넷을 확인하고 다시 시도해주세요.');
     return;
   }
 
   try{
-    var r=await db.from('students').select('*').eq('code',code).single();
-    btn.textContent='시작하기';btn.disabled=false;
-
-    if(r.error||!r.data){
-      alert('등록되지 않은 코드예요.\n선생님께 코드를 확인해주세요!\n\n입력한 코드: '+code);
+    var r=await db.from('students').update({pin:pin1}).eq('code',pendingStudent.code);
+    if(r.error){
+      btn.textContent='PIN 설정하고 시작하기';btn.disabled=false;
+      alert('PIN 저장 실패: '+r.error.message);
       return;
     }
-
-    /* approved 컬럼이 있으면 확인, 없으면 통과 */
-    if(r.data.hasOwnProperty('approved')&&r.data.approved===false){
-      showBlockedMsg();
-      return;
-    }
-
-    student={
-      name:r.data.name||name,
-      code:code,
-      total:r.data.total_sentences||0,
-      startDate:r.data.start_date||new Date().toISOString().slice(0,10)
-    };
-    try{localStorage.setItem('bw_'+code,JSON.stringify(student));}catch(e){}
-    enterApp();
-
   }catch(e){
-    btn.textContent='시작하기';btn.disabled=false;
-    console.error('verifyCode error:',e);
-    alert('오류: '+e.message+'\n\n코드를 다시 확인하거나 잠시 후 시도해봐요!');
+    btn.textContent='PIN 설정하고 시작하기';btn.disabled=false;
+    alert('서버 연결 오류: '+e.message);
+    return;
   }
+
+  pendingStudent.pin=pin1;
+  finalizeLogin();
+}
+
+function submitPin(){
+  if(!pendingStudent)return;
+  var pin=document.getElementById('inp-pin').value.trim();
+  if(!/^\d{6}$/.test(pin)){
+    alert('PIN은 숫자 6자리여야 해요.');
+    return;
+  }
+  if(pin!==pendingStudent.pin){
+    alert('PIN이 맞지 않아요.\n다시 확인해주세요!');
+    document.getElementById('inp-pin').value='';
+    document.getElementById('inp-pin').focus();
+    return;
+  }
+  finalizeLogin();
+}
+
+function finalizeLogin(){
+  if(!pendingStudent)return;
+  student={
+    name:pendingStudent.name,
+    code:pendingStudent.code,
+    total:pendingStudent.total,
+    startDate:pendingStudent.startDate
+  };
+  /* 캐시에 PIN까지 저장 (오프라인 fallback용) */
+  try{
+    var cacheData={
+      name:student.name,code:student.code,total:student.total,
+      startDate:student.startDate,pin:pendingStudent.pin
+    };
+    localStorage.setItem('bw_'+student.code,JSON.stringify(cacheData));
+  }catch(e){}
+  pendingStudent=null;
+  enterApp();
+}
+
+function forgotPin(){
+  alert('PIN을 잊으셨나요?\n\n선생님께 메일로 문의해주세요:\nhjnam315@gmail.com\n\n학생 코드와 함께 알려주시면\nPIN을 다시 설정할 수 있도록 도와드려요.');
+}
+
+/* PIN을 보존하면서 학생 캐시 갱신 */
+function saveCacheStudent(){
+  if(!student)return;
+  try{
+    var existing=JSON.parse(localStorage.getItem('bw_'+student.code)||'{}');
+    var data={
+      name:student.name,code:student.code,total:student.total,
+      startDate:student.startDate,pin:existing.pin||null
+    };
+    localStorage.setItem('bw_'+student.code,JSON.stringify(data));
+  }catch(e){}
 }
 
 function showBlockedMsg(){
@@ -733,7 +901,7 @@ function showBlockedMsg(){
   msg.id='blocked-msg';
   msg.style.cssText='background:#FFF0F0;border:1.5px solid #FCA5A5;border-radius:12px;padding:14px 18px;max-width:360px;width:100%;text-align:center;margin-top:8px';
   msg.innerHTML='<div style="font-size:14px;font-weight:700;color:#B82020;margin-bottom:6px">접속이 승인되지 않았어요</div>'
-    +'<div style="font-size:12px;color:#555;line-height:1.8">결제 확인 후 선생님이 승인하면<br>접속이 가능해요.<br><br>문의: writebloom@email.com</div>';
+    +'<div style="font-size:12px;color:#555;line-height:1.8">결제 확인 후 선생님이 승인하면<br>접속이 가능해요.<br><br>문의: hjnam315@gmail.com</div>';
   box.appendChild(msg);
 }
 
@@ -754,7 +922,7 @@ async function syncFromSupabase(){
     var r=await db.from('students').select('total_sentences').eq('code',student.code).single();
     if(r.data&&r.data.total_sentences>student.total){
       student.total=r.data.total_sentences;
-      localStorage.setItem('bw_'+student.code,JSON.stringify(student));
+      saveCacheStudent();
       updateProgress();buildDash();
     }
   }catch(e){}
@@ -890,15 +1058,12 @@ function buildDash(){
   var unitProg=getUnitProgress(total);
   wrap.innerHTML='';
 
-  /* 인사 */
   var greet=document.createElement('div');greet.className='dash-greet';
   var hour=new Date().getHours();
   var greetMsg=hour<12?'좋은 아침이에요! ☀️':hour<18?'안녕하세요! 😊':'수고했어요! 🌙';
-  greet.innerHTML='<div class="dash-greet-name">'+student.name+'님, '+greetMsg+'</div>'
-    +'<div class="dash-greet-sub">'+student.code+'</div>';
+  greet.innerHTML='<div class="dash-greet-name">'+student.name+'님, '+greetMsg+'</div>';
   wrap.appendChild(greet);
 
-  /* 점검 경고 배너 */
   if(nextCp&&(nextCp-total)<=WARN_BEFORE){
     var warn=document.createElement('div');warn.className='warn-banner';warn.id='dash-warn';
     warn.textContent='🏁 UNIT 점검까지 '+(nextCp-total)+'문장 남았어요! 준비해봐요!';
@@ -908,7 +1073,6 @@ function buildDash(){
     wrap.appendChild(warn);
   }
 
-  /* 오늘 진도 */
   var todayCard=document.createElement('div');todayCard.className='dash-today';
   var target=10;
   var todayPct=Math.min(100,Math.round(todayDone/target*100));
@@ -922,7 +1086,6 @@ function buildDash(){
     +'<button class="dash-start-btn" onclick="setMode(&quot;learn&quot;)">'+(isDone?'복습하기':'학습 시작')+'</button>';
   wrap.appendChild(todayCard);
 
-  /* 통계 */
   var stats=document.createElement('div');stats.className='dash-stats';
   stats.innerHTML=
     '<div class="dash-stat"><div class="dash-stat-n">'+total+'</div><div class="dash-stat-l">총 문장</div></div>'
@@ -930,7 +1093,6 @@ function buildDash(){
     +'<div class="dash-stat"><div class="dash-stat-n">'+(1000-total)+'</div><div class="dash-stat-l">남은 문장</div></div>';
   wrap.appendChild(stats);
 
-  /* 로드맵 */
   var rm=document.createElement('div');rm.className='roadmap-card';
   rm.innerHTML='<div class="roadmap-title">📍 전체 커리큘럼</div>';
   var cum=0;
@@ -949,7 +1111,6 @@ function buildDash(){
       +'<div class="ru-bar"><div class="ru-fill" style="width:'+pct+'%"></div></div>';
     rm.appendChild(div);
 
-    /* 점검 표시 */
     var cpDiv=document.createElement('div');
     cpDiv.style.cssText='text-align:center;font-size:11px;font-weight:700;padding:6px;margin:-3px 0 5px;';
     var cpDone=total>=u.checkpoint;
@@ -968,7 +1129,6 @@ function getTodayDone(){
   try{
     var d=JSON.parse(localStorage.getItem(key)||'null');
     if(!d)return 0;
-    /* 받아쓰기 완료된 문장만 카운트 */
     return d.sentences.filter(function(s){
       return typeof s==='object'&&s.dtResult&&s.dtResult.ok;
     }).length;
@@ -1019,17 +1179,15 @@ function setMode(m){
 function getTodayQuiz(){
   var total=student?student.total||0:0;
 
-  /* UNIT별 퀴즈 풀 선택 */
   var pool;
   if(total<50){
-    pool=QUIZ_UNIT1.slice(); /* UNIT1: S+V만 */
+    pool=QUIZ_UNIT1.slice();
   } else if(total<200){
-    pool=QUIZ_UNIT2.slice(); /* UNIT2: S+V+O */
+    pool=QUIZ_UNIT2.slice();
   } else {
-    pool=QUIZ_POOL.slice();  /* UNIT3+: 전체 */
+    pool=QUIZ_POOL.slice();
   }
 
-  /* 이미 학습한 문장 제외 */
   var learned={};
   if(student){
     for(var k in localStorage){
@@ -1050,12 +1208,10 @@ function getTodayQuiz(){
     var qe=buildEng(q.who,q.does,q.magic,q.what).toLowerCase().replace(/[.!?]$/,'').trim();
     return !learned[qe];
   });
-  /* 필터 후 10개 미만이면 같은 풀에서 채우기 */
   if(filtered.length<10){
     var extra=pool.filter(function(q){return filtered.indexOf(q)<0;});
     filtered=filtered.concat(extra);
   }
-  /* 날짜 기반 섞기 */
   var d=new Date();
   var seed=d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate();
   for(var i=filtered.length-1;i>0;i--){
@@ -1141,11 +1297,10 @@ function quizCheck(){
     document.getElementById('qr-sub').textContent=errs.join(' / ');
   }
 
-  /* 세션에 추가 + 즉시 저장 */
   var dup=sessionSaved.some(function(s){return s.eng===ans;});
   if(!dup){
-    sessionSaved.push({eng:ans,kor:kk||q.kor,n:sessionSaved.length+1,fromQuiz:true});
-    saveOneToLocalDiary({eng:ans,kor:kk||q.kor,fromQuiz:true});
+    sessionSaved.push({eng:ans,kor:kk||q.kor,n:sessionSaved.length+1,fromQuiz:true,quizOk:!!ok});
+    saveOneToLocalDiary({eng:ans,kor:kk||q.kor,fromQuiz:true,quizOk:!!ok});
   }
 
   qResults.push({kor:q.kor,eng:ans,ok:!!ok,time:qSecs});
@@ -1241,12 +1396,12 @@ function saveOneToLocalDiary(item){
   var eng=item.eng;
   var already=existing.sentences.some(function(s){return (typeof s==='object'?s.eng:s)===eng;});
   if(!already){
-    existing.sentences.push({eng:item.eng,kor:item.kor||'',dtResult:null});
+    var quizResult=item.fromQuiz?{ok:!!item.quizOk}:null;
+    existing.sentences.push({eng:item.eng,kor:item.kor||'',dtResult:null,quizResult:quizResult});
     existing.count=existing.sentences.length;
     try{localStorage.setItem(key,JSON.stringify(existing));}catch(e){}
-    /* 진도 즉시 반영 */
     student.total=(student.total||0)+1;
-    try{localStorage.setItem('bw_'+student.code,JSON.stringify(student));}catch(e){}
+    saveCacheStudent();
     updateProgress();
     checkCheckpoint();
   }
@@ -1401,7 +1556,6 @@ function buildDictation(){
         var fx=document.createElement('div');fx.className='dt-fb-fix';fx.innerHTML=analyzeDiff(tc,tg);
         fb.appendChild(m);fb.appendChild(co);fb.appendChild(fx);
       }
-      /* 받아쓰기 결과 저장 */
       s.dtResult={ok:isOk,typed:typed,fix:isOk?'':fb.querySelector('.dt-fb-fix')?fb.querySelector('.dt-fb-fix').textContent:''};
       saveDtResult(s);
     }
@@ -1464,6 +1618,256 @@ function saveDtResult(s){
   buildDash();
 }
 
+/* ══════════════════════════════════════════
+   ★ NEW: 누적 오답 수집
+   ══════════════════════════════════════════ */
+function collectAllWrongAnswers(){
+  if(!student)return [];
+  var allWrong=[];
+  for(var k in localStorage){
+    if(k.indexOf('bw_diary_'+student.code+'_')!==0)continue;
+    try{
+      var d=JSON.parse(localStorage.getItem(k));
+      if(!d||!d.sentences)continue;
+      d.sentences.forEach(function(s){
+        if(typeof s!=='object')return;
+        var quizWrong=!!(s.quizResult&&s.quizResult.ok===false);
+        var dtWrong=!!(s.dtResult&&s.dtResult.ok===false);
+        if(!quizWrong&&!dtWrong)return;
+        allWrong.push({
+          date:d.date,
+          eng:s.eng,
+          kor:s.kor||'',
+          typed:s.dtResult?(s.dtResult.typed||''):'',
+          fix:s.dtResult?(s.dtResult.fix||''):'',
+          quizWrong:quizWrong,
+          dtWrong:dtWrong
+        });
+      });
+    }catch(e){}
+  }
+  allWrong.sort(function(a,b){return b.date.localeCompare(a.date);});
+  return allWrong;
+}
+
+/* ══════════════════════════════════════════
+   ★ NEW: 공통 패턴 분석
+   ══════════════════════════════════════════ */
+function analyzeCommonPatterns(wrongList){
+  var patterns={
+    magicS_missing:0,magicS_extra:0,word_missing:0,word_extra:0,
+    word_order:0,spelling:0,capital:0
+  };
+  wrongList.forEach(function(w){
+    var typed=(w.typed||'').toLowerCase().replace(/[.!?]$/,'').trim();
+    var target=(w.eng||'').toLowerCase().replace(/[.!?]$/,'').trim();
+    if(!typed||typed==='(건너뜀)')return;
+    var tw=typed.split(/\s+/);
+    var tgw=target.split(/\s+/);
+
+    var magicSMiss=false,magicSExtra=false;
+    var minLen=Math.min(tw.length,tgw.length);
+    for(var i=0;i<minLen;i++){
+      if(!tw[i]||!tgw[i])continue;
+      if(tgw[i]===tw[i]+'s')magicSMiss=true;
+      if(tw[i]===tgw[i]+'s')magicSExtra=true;
+    }
+    if(magicSMiss)patterns.magicS_missing++;
+    if(magicSExtra)patterns.magicS_extra++;
+
+    if(tw.length<tgw.length)patterns.word_missing++;
+    else if(tw.length>tgw.length)patterns.word_extra++;
+
+    if(tw.length===tgw.length&&tw.length>1){
+      var sortedT=tw.slice().sort().join(' ');
+      var sortedG=tgw.slice().sort().join(' ');
+      var orderedT=tw.join(' ');
+      var orderedG=tgw.join(' ');
+      if(sortedT===sortedG&&orderedT!==orderedG)patterns.word_order++;
+    }
+
+    if(tw.length===tgw.length){
+      var spellMiss=false;
+      for(var j=0;j<tw.length;j++){
+        if(tw[j]!==tgw[j]&&tw[j].length>0&&tgw[j].length>0){
+          if(tgw[j]!==tw[j]+'s'&&tw[j]!==tgw[j]+'s'){
+            spellMiss=true;
+          }
+        }
+      }
+      if(spellMiss)patterns.spelling++;
+    }
+
+    var rawTyped=(w.typed||'').replace(/[.!?]$/,'').trim();
+    var rawTarget=(w.eng||'').replace(/[.!?]$/,'').trim();
+    if(rawTyped&&rawTarget&&rawTyped.toLowerCase()===rawTarget.toLowerCase()&&rawTyped!==rawTarget){
+      patterns.capital++;
+    }
+  });
+
+  var sorted=Object.keys(patterns)
+    .filter(function(k){return patterns[k]>0;})
+    .map(function(k){return {type:k,count:patterns[k]};})
+    .sort(function(a,b){return b.count-a.count;});
+  return sorted;
+}
+
+/* ══════════════════════════════════════════
+   ★ NEW: 누적 오답 노트 PDF 다운로드
+   ══════════════════════════════════════════ */
+function downloadWrongAnswerPDF(){
+  if(!student)return;
+  var allWrong=collectAllWrongAnswers();
+  if(allWrong.length===0){
+    alert('오답이 없어요! 정말 잘하고 있어요 🎉');
+    return;
+  }
+
+  var allDays=[];
+  for(var k in localStorage){
+    if(k.indexOf('bw_diary_'+student.code+'_')!==0)continue;
+    try{
+      var d=JSON.parse(localStorage.getItem(k));
+      if(d)allDays.push(d);
+    }catch(e){}
+  }
+  allDays.sort(function(a,b){return a.date.localeCompare(b.date);});
+
+  var startDate=allDays.length>0?allDays[0].date:new Date().toISOString().slice(0,10);
+  var endDate=new Date().toISOString().slice(0,10);
+  var totalDays=allDays.length;
+  var totalSentences=student.total||0;
+
+  var patterns=analyzeCommonPatterns(allWrong);
+
+  var encourage;
+  if(allWrong.length<=5)encourage=ENCOURAGE_BY_COUNT.few;
+  else if(allWrong.length<=15)encourage=ENCOURAGE_BY_COUNT.some;
+  else encourage=ENCOURAGE_BY_COUNT.many;
+
+  var patternHtml='';
+  if(patterns.length>0){
+    patternHtml='<div class="pattern-section"><div class="pattern-title">📊 자주 틀리는 부분</div>';
+    patterns.slice(0,4).forEach(function(p){
+      var ment=MENTS_BY_PATTERN[p.type]||MENTS_BY_PATTERN.general;
+      patternHtml+='<div class="pattern-item">'
+        +'<span class="pattern-count">'+p.count+'회</span>'
+        +'<span class="pattern-text">'+ment+'</span>'
+        +'</div>';
+    });
+    patternHtml+='</div>';
+  }
+
+  var wrongHtml='';
+  var prevDate=null;
+  allWrong.forEach(function(w,idx){
+    var dateObj=new Date(w.date+'T00:00:00');
+    var dateStr=(dateObj.getMonth()+1)+'월 '+dateObj.getDate()+'일';
+    if(w.date!==prevDate){
+      if(prevDate!==null)wrongHtml+='</div>';
+      wrongHtml+='<div class="date-group"><div class="date-label">'+dateStr+'</div>';
+      prevDate=w.date;
+    }
+    var tags='';
+    if(w.quizWrong)tags+='<span class="tag tag-quiz">🧩 퀴즈</span>';
+    if(w.dtWrong)tags+='<span class="tag tag-dt">✏️ 받아쓰기</span>';
+    var typedHtml='';
+    if(w.dtWrong){
+      typedHtml=(w.typed&&w.typed!=='(건너뜀)')
+        ?'<div class="wrong-typed">내가 쓴 것: '+w.typed+'</div>'
+        :'<div class="wrong-typed">건너뛴 문장</div>';
+    }
+    wrongHtml+='<div class="wrong-item">'
+      +'<div class="wrong-num">#'+(idx+1)+'</div>'
+      +'<div class="wrong-content">'
+      +'<div class="wrong-tags">'+tags+'</div>'
+      +'<div class="wrong-kor">'+(w.kor||'(한국어 없음)')+'</div>'
+      +'<div class="wrong-correct">정답: <b>'+w.eng+'</b></div>'
+      +typedHtml
+      +'</div>'
+      +'</div>';
+  });
+  if(prevDate!==null)wrongHtml+='</div>';
+
+  var startObj=new Date(startDate+'T00:00:00');
+  var endObj=new Date(endDate+'T00:00:00');
+  var periodStr=startObj.getFullYear()+'.'+(startObj.getMonth()+1)+'.'+startObj.getDate()
+    +' ~ '+endObj.getFullYear()+'.'+(endObj.getMonth()+1)+'.'+endObj.getDate();
+
+  var today=new Date();
+  var todayStr=today.getFullYear()+'.'+(today.getMonth()+1)+'.'+today.getDate();
+
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8">'
+    +'<title>오답 노트 - '+student.name+'</title>'
+    +'<style>'
+    +'body{font-family:"Apple SD Gothic Neo","Malgun Gothic",sans-serif;margin:0;padding:32px;color:#111;background:#fff}'
+    +'.hdr{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:3px solid #A855F7;padding-bottom:14px;margin-bottom:20px}'
+    +'.brand{font-size:11px;color:#F472B6;font-weight:700;letter-spacing:.1em}'
+    +'.title{font-size:24px;font-weight:900;font-style:italic;color:#111;margin-top:2px}'
+    +'.sub{font-size:11px;color:#A855F7;font-weight:700;margin-top:2px}'
+    +'.note-title{font-size:18px;font-weight:800;color:#A855F7;margin-top:8px}'
+    +'.meta{font-size:12px;color:#666;text-align:right;line-height:1.7}'
+    +'.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:18px}'
+    +'.stat{background:#F8F4FE;border-radius:10px;padding:12px;text-align:center;border:1px solid #E9D5FF}'
+    +'.stat-n{font-size:22px;font-weight:800;color:#7C3AED}'
+    +'.stat-l{font-size:10px;color:#666;margin-top:2px}'
+    +'.encourage{background:#FFF7ED;border-left:4px solid #F59E0B;padding:12px 16px;border-radius:6px;margin-bottom:18px;font-size:13px;color:#92400E;font-weight:700}'
+    +'.pattern-section{background:#F0F9FF;border:1.5px solid #BAE6FD;border-radius:10px;padding:14px 16px;margin-bottom:18px}'
+    +'.pattern-title{font-size:13px;font-weight:800;color:#0369A1;margin-bottom:10px}'
+    +'.pattern-item{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:12px;color:#0C4A6E}'
+    +'.pattern-count{background:#0369A1;color:#fff;font-weight:700;font-size:10px;padding:2px 8px;border-radius:10px;flex-shrink:0;min-width:32px;text-align:center}'
+    +'.pattern-text{line-height:1.5}'
+    +'.section-title{font-size:13px;font-weight:800;color:#111;margin:14px 0 10px;padding-bottom:6px;border-bottom:1.5px solid #E5E7EB}'
+    +'.date-group{margin-bottom:12px}'
+    +'.date-label{font-size:11px;font-weight:700;color:#A855F7;background:#F5F0FF;padding:4px 10px;border-radius:6px;display:inline-block;margin-bottom:6px}'
+    +'.wrong-item{display:flex;gap:10px;background:#FFF;border:1px solid #FEE2E2;border-left:4px solid #EF4444;border-radius:8px;padding:10px 12px;margin-bottom:5px}'
+    +'.wrong-num{font-size:11px;font-weight:700;color:#999;flex-shrink:0;width:30px}'
+    +'.wrong-content{flex:1}'
+    +'.wrong-kor{font-size:12px;color:#444;margin-bottom:3px}'
+    +'.wrong-correct{font-size:13px;color:#16A34A;margin-bottom:2px}'
+    +'.wrong-typed{font-size:11px;color:#DC2626;margin-top:3px}'
+    +'.wrong-tags{display:flex;gap:4px;margin-bottom:4px;flex-wrap:wrap}'
+    +'.tag{font-size:9px;font-weight:700;padding:2px 7px;border-radius:8px;display:inline-block}'
+    +'.tag-quiz{background:#F3E8FF;color:#7C3AED;border:1px solid #DDD6FE}'
+    +'.tag-dt{background:#DBEAFE;color:#1D4ED8;border:1px solid #BFDBFE}'
+    +'.footer{margin-top:24px;text-align:center;font-size:10px;color:#CCC;padding-top:14px;border-top:1px solid #EEE;line-height:1.6}'
+    +'@media print{body{padding:20px}.wrong-item{break-inside:avoid}.pattern-section{break-inside:avoid}}'
+    +'</style></head><body>'
+    +'<div class="hdr">'
+    +'<div>'
+    +'<div class="brand">WRITE BLOOM ENGLISH</div>'
+    +'<div class="title">Block Writing</div>'
+    +'<div class="sub">Color &amp; Block System</div>'
+    +'<div class="note-title">📝 누적 오답 노트</div>'
+    +'</div>'
+    +'<div class="meta">'
+    +'<div><b>'+student.name+'</b> 학생</div>'
+    +'<div>학습 기간: '+periodStr+'</div>'
+    +'<div>발행일: '+todayStr+'</div>'
+    +'</div>'
+    +'</div>'
+    +'<div class="stats">'
+    +'<div class="stat"><div class="stat-n">'+totalDays+'</div><div class="stat-l">학습 일수</div></div>'
+    +'<div class="stat"><div class="stat-n">'+totalSentences+'</div><div class="stat-l">누적 학습 문장</div></div>'
+    +'<div class="stat"><div class="stat-n">'+allWrong.length+'</div><div class="stat-l">누적 오답 수</div></div>'
+    +'<div class="stat"><div class="stat-n">'+Math.max(0,totalSentences-allWrong.length)+'</div><div class="stat-l">맞춘 문장</div></div>'
+    +'</div>'
+    +'<div class="encourage">'+encourage+'</div>'
+    +patternHtml
+    +'<div class="section-title">날짜별 오답 목록</div>'
+    +wrongHtml
+    +'<div class="footer">© 2026 Write Bloom English &middot; Block Writing<br>이 노트는 '+student.name+' 학생의 학습 기록을 기반으로 자동 생성되었습니다.</div>'
+    +'</body></html>';
+
+  var blob=new Blob([html],{type:'text/html;charset=utf-8'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a');
+  a.href=url;
+  a.download='오답노트_'+student.name+'_'+todayStr+'.html';
+  document.body.appendChild(a);a.click();
+  document.body.removeChild(a);URL.revokeObjectURL(url);
+}
+
 /* ══ 학습일지 ══ */
 function buildDiary(){
   var wrap=document.getElementById('diary-wrap');wrap.innerHTML='';
@@ -1489,6 +1893,27 @@ function buildDiary(){
     +'<div class="diary-stat"><div class="diary-stat-n">'+avg+'</div><div class="diary-stat-l">일 평균</div></div>'
     +'</div>';
   wrap.appendChild(hdr);
+
+  /* ★ NEW: 누적 오답 노트 PDF 버튼 */
+  var allWrong=collectAllWrongAnswers();
+  var noteCard=document.createElement('div');
+  noteCard.className='wrong-note-card';
+  noteCard.innerHTML=
+    '<div class="wrong-note-info">'
+    +'<div class="wrong-note-title">📝 누적 오답 노트</div>'
+    +'<div class="wrong-note-desc">'
+    +(allWrong.length===0?'아직 오답이 없어요. 잘하고 있어요!':'퀴즈·받아쓰기에서 틀린 문장 '+allWrong.length+'개를 모아 PDF로 저장')
+    +'</div>'
+    +'</div>';
+  var noteBtn=document.createElement('button');
+  noteBtn.className='wrong-note-btn';
+  noteBtn.textContent=allWrong.length===0?'오답 없음':'PDF 저장';
+  noteBtn.disabled=allWrong.length===0;
+  if(allWrong.length>0){
+    noteBtn.onclick=function(){downloadWrongAnswerPDF();};
+  }
+  noteCard.appendChild(noteBtn);
+  wrap.appendChild(noteCard);
 
   var ct=document.createElement('div');ct.className='diary-sec-title';ct.textContent='학습 달력';wrap.appendChild(ct);
   wrap.appendChild(makeCal(allDays));
